@@ -1,5 +1,5 @@
 # Import necessary libraries
-# ...
+import Rhino
 
 # Define the Point class
 class Point:
@@ -63,6 +63,7 @@ class ElectricalRoom:
 
         # Iterate through each piece of equipment in the equipment list
         for equipment in self.equipment_list:
+            pass
             # Check if the equipment can be placed at the current position
             # ...
 
