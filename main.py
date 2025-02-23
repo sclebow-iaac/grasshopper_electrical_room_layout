@@ -46,6 +46,74 @@ class Vector:
         
         return Vector(new_x, new_y)
 
+def inches_to_feet(inches):
+    return inches / 12
+
+# Define the Door class
+class Door:
+    def __init__(self, width=3, height=10, position: Point = Point(0, 0), orientation: Vector = Vector(0, 1)):
+        self.width = width
+        self.height = height
+        self.position = position
+        self.orientation = orientation
+        self.thickness = inches_to_feet(4) # Thickness of the door
+
+        self.door_geometry = self.create_rhino_geometry(door=True, clearance=False)
+        self.clearance_geometry = self.create_rhino_geometry(door=False, clearance=True)
+        self.geometry = self.create_rhino_geometry(door=True, clearance=True)
+
+    def create_rhino_geometry(self, door=True, clearance=True) -> Rhino.Geometry.Brep:
+        # Initialize a list to store the geometry
+        equipment_geometry = []
+        
+        if door:
+            # Create a box geometry for the door
+            min_x = self.position.x - self.width / 2 # min_x is the left side of the door
+            max_x = self.position.x + self.width / 2 # max_x is the right side of the door
+            min_y = self.position.y - self.thickness / 2 # min_y is the front side of the door
+            max_y = self.position.y + self.thickness / 2 # max_y is the back side of the door
+            min_z = 0 # min_z is the bottom of the door
+            max_z = self.height # max_z is the top of the door
+
+            door_brep = Rhino.Geometry.Brep.CreateFromBox(Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the door
+            
+            # Rotate the door 45 degrees around the Z-axis by the angle of orientation at the hinge
+            rotation_axis = Rhino.Geometry.Vector3d(0, 0, 1) # Z-axis
+            rotation_angle = math.pi / 4 # 45 degrees in radians
+
+            hinge_point = Rhino.Geometry.Point3d(self.position.x + self.width / 2, self.position.y, 0) # Hinge point is the right side of the door
+            door_brep.Rotate(rotation_angle, rotation_axis, hinge_point) # Rotate the door around the hinge point
+
+            equipment_geometry.append(door_brep)
+        if clearance:
+            # Create clearance geometry inside the room
+            min_x = self.position.x - self.width / 2
+            max_x = self.position.x + self.width / 2
+            min_y = self.position.y
+            max_y = self.position.y + self.width
+            min_z = 0
+            max_z = self.height
+            clearance_brep = Rhino.Geometry.Brep.CreateFromBox(Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z))
+            equipment_geometry.append(clearance_brep)            
+        
+        # Rotate the geometry around the Z-axis by the angle of orientation
+        rotation_axis = Rhino.Geometry.Vector3d(0, 0, 1) # Z-axis
+        rotation_angle = self.orientation.get_angle(Vector(0, 1))
+        print(f'Rotation angle: {rotation_angle}')
+
+        if rotation_angle != 0:
+            for brep in equipment_geometry:
+                brep.Rotate(rotation_angle, rotation_axis, self.position.to_gh_point())
+
+        return equipment_geometry
+    
+    def rotate(self, angle): # Rotate the door by a given angle in radians
+        self.orientation = self.orientation.rotate(angle)
+        # Update the geometry after rotation
+        self.door_geometry = self.create_rhino_geometry(door=True, clearance=False)
+        self.clearance_geometry = self.create_rhino_geometry(door=False, clearance=True)
+        self.geometry = self.create_rhino_geometry(door=True, clearance=False)
+
 # Define the ElectricalEquipment base class
 class ElectricalEquipment:
     def __init__(self, width, height, depth, position: Point = Point(0, 0), front_clearance=3, side_clearance=0, rear_clearance=0, orientation: Vector = Vector(0, 1)):
@@ -86,7 +154,8 @@ class ElectricalEquipment:
         min_z = 0 # min_z is the bottom of the equipment
         max_z = self.height # max_z is the top of the equipment
         if equipment: # If equipment is True, create the equipment geometry
-            equipment_brep = Rhino.Geometry.Brep.CreateFromBox(Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the equipment
+            equipment_brep = Rhino.Geometry.Brep.CreateFromBox(
+                Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the equipment
         
         # Create clearance geometry
         if clearance:
@@ -100,7 +169,8 @@ class ElectricalEquipment:
                 max_y = self.position.y + self.depth + self.front_clearance + self.rear_clearance # max_y is the front side of the equipment + front clearance
                 min_z = 0 # min_z is the bottom of the equipment
                 max_z = self.height # max_z is the top of the equipment
-                front_clearance_brep = Rhino.Geometry.Brep.CreateFromBox(Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the front clearance
+                front_clearance_brep = Rhino.Geometry.Brep.CreateFromBox(
+                    Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the front clearance
                 clearance_brep_list.append(front_clearance_brep)
 
             if self.side_clearance > 0:
@@ -112,7 +182,8 @@ class ElectricalEquipment:
                 max_y = self.position.y + self.depth + self.rear_clearance # max_y is the front side of the equipment
                 min_z = 0 # min_z is the bottom of te equipment
                 max_z = self.height # max_z is the top of the equipment
-                left_clearance_brep = Rhino.Geometry.Brep.CreateFromBox(Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the left side clearance
+                left_clearance_brep = Rhino.Geometry.Brep.CreateFromBox(
+                    Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the left side clearance
 
                 # Create a box geometry for the right side clearance
                 # side_clearance should be along the positive x-axis and offset from the equipment
@@ -122,7 +193,9 @@ class ElectricalEquipment:
                 max_y = self.position.y + self.depth + self.rear_clearance # max_y is the front side of the equipment
                 min_z = 0 # min_z is the bottom of the equipment
                 max_z = self.height # max_z is the top of the equipment
-                right_clearance_brep = Rhino.Geometry.Brep.CreateFromBox(Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the right side clearance
+                # Create a box geometry for the right side clearance
+                right_clearance_brep = Rhino.Geometry.Brep.CreateFromBox(
+                    Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) 
 
                 clearance_brep_list.append(left_clearance_brep)
                 clearance_brep_list.append(right_clearance_brep)
@@ -136,7 +209,8 @@ class ElectricalEquipment:
                 max_y = self.position.y + self.rear_clearance # max_y is the rear side of the equipment
                 min_z = 0
                 max_z = self.height
-                rear_clearance_brep = Rhino.Geometry.Brep.CreateFromBox(Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z))
+                rear_clearance_brep = Rhino.Geometry.Brep.CreateFromBox(
+                    Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z))
             
                 clearance_brep_list.append(rear_clearance_brep)
 
@@ -149,77 +223,105 @@ class ElectricalEquipment:
 
         # Rotate the geometry around the Z-axis by the angle of orientation
         rotation_axis = Rhino.Geometry.Vector3d(0, 0, 1) # Z-axis
-        rotation_angle = self.orientation.get_angle(Vector(0, 1)) # Angle in radians
+        # Angle in radians
+        rotation_angle = self.orientation.get_angle(Vector(0, 1)) 
         
         print(f'Rotation angle: {rotation_angle}')
 
         if rotation_angle != 0:
             for brep in equipment_geometry:
-                brep.Rotate(rotation_angle, rotation_axis, self.position.to_gh_point())
+                brep.Rotate(rotation_angle, 
+                            rotation_axis, self.position.to_gh_point())
         
         # Return the combined geometry
         return equipment_geometry
 
 # Define the Panelboard subclass
 class Panelboard(ElectricalEquipment):
-    def __init__(self, width=2, height=4, depth=0.5, position: Point = Point(0, 0)):
+    
+    def __init__(self, width=2, height=4, depth=0.5, 
+                 position: Point = Point(0, 0)):
         super().__init__(width, height, depth, position)
         # Additional attributes specific to panelboard
         # ...
 
 # Define the Transformer subclass
 class Transformer(ElectricalEquipment):
-    def __init__(self, width=3, height=3, depth=3, position: Point = Point(0, 0)):
+    def __init__(self, width=3, height=3, depth=3, 
+                 position: Point = Point(0, 0)):
         self.rear_clearance = 0.25
         self.front_clearance = 3
         self.side_clearance = 0.25
 
-        super().__init__(width, height, depth, position, self.front_clearance, self.side_clearance, self.rear_clearance)
+        super().__init__(width, height, depth, position, 
+                         self.front_clearance, self.side_clearance, 
+                         self.rear_clearance)
 
 # Define the ElectricalRoom class
 class ElectricalRoom:
     # Initialize the electrical room with necessary attributes (e.g., dimensions, list of equipment)
     # ...
-    def __init__(self, width, length, height, door_count=1):
+    def __init__(self, width, length, height=10, door_count=1):
         self.width = width
         self.length = length
         self.height = height
         self.door_count = door_count
         self.equipment_list = []
 
+        self.doors = [Door() for _ in range(door_count)]
+
+        self.interior_rectangle = self.create_interior_rectangle()
+        self.wall_geometry = self.create_wall_geometry()
+    
+    # Method to add equipment to the room
     def add_equipment(self, equipment: ElectricalEquipment, count=1) -> bool:
         for i in range(count):
             self.equipment_list.append(equipment)
         return True
+    
+    def create_interior_rectangle(self) -> Rhino.Geometry.Rectangle3d:
+        # Create a rectangle for the room
+        min_x = -self.width / 2
+        max_x = self.width / 2
+        min_y = -self.length / 2
+        max_y = self.length / 2
 
-    # Method to layout all equipment in the room
-    def layout_equipment(self):
-        # Initialize a starting position for layout
-        # ...
+        return Rhino.Geometry.Rectangle3d(Rhino.Geometry.Plane.WorldXY, 
+                                           Rhino.Geometry.Point3d(min_x, min_y, 0), 
+                                           Rhino.Geometry.Point3d(max_x, max_y, 0))
+    
+    def create_exterior_rectangle(self, wall_thickness) -> Rhino.Geometry.Rectangle3d:
+        # Create a rectangle for the room
+        min_x = -self.width / 2 - wall_thickness
+        max_x = self.width / 2 + wall_thickness
+        min_y = -self.length / 2 - wall_thickness
+        max_y = self.length / 2 + wall_thickness
 
-        # Iterate through each piece of equipment in the equipment list
-        for equipment in self.equipment_list:
-            pass
-            # Check if the equipment can be placed at the current position
-            # ...
+        return Rhino.Geometry.Rectangle3d(Rhino.Geometry.Plane.WorldXY,
+                                           Rhino.Geometry.Point3d(min_x, min_y, 0), 
+                                           Rhino.Geometry.Point3d(max_x, max_y, 0))
 
-            # If it can be placed, update the equipment's position
-            # ...
+    # Method to create the wall geometry of the room
+    # def create_wall_geometry(self) -> Rhino.Geometry.Brep:
+    def create_wall_geometry(self):
+        wall_thickness = 0.5 # Thickness of the wall
 
-            # If it cannot be placed, find the next available position
-            # ...
+        # Offset the interior rectangle to create the exterior rectangle
+        interior_rectangle = self.interior_rectangle
+        exterior_rectangle = self.create_exterior_rectangle(wall_thickness)
 
-            # Update the position for the next piece of equipment
-            # ...
+        edges = [interior_rectangle.ToNurbsCurve(), exterior_rectangle.ToNurbsCurve()]
+        # Create a surface from both rectangles
+        surface = Rhino.Geometry.Brep.CreatePlanarBreps(edges, 0.001)[0]
 
-        # Ensure all equipment is placed within the room boundaries
-        # ...
+        # Extrude the surface to create the walls
+        direction = Rhino.Geometry.Vector3d(0, 0, self.height)
+        wall_brep = Rhino.Geometry.Brep.CreateFromOffsetFace(surface.Faces[0], self.height, 0.001, True, True)
 
-        # Handle any special layout requirements (e.g., clearances, door positions)
-        # ...
+        return wall_brep
+        
 
 # Create an instance of ElectricalRoom
-# ...
 # INPUTS
 # Dimensions of the room
 room_width = 20
@@ -231,7 +333,6 @@ electrical_room = ElectricalRoom(room_width, room_length,
                                     room_height, door_count)
 
 # Create instances of Panelboard and Transformer
-# ...
 # INPUTS
 panelboard_count = 2
 transformer_count = 1
@@ -254,6 +355,19 @@ for equipment in electrical_room.equipment_list:
     equipment_geometry.append(equipment.equipment_geometry)
     clearance_geometry.append(equipment.clearance_geometry)
     all_equipment_geometry.append(equipment.geometry)
+
+equipment_geometry = []
+clearance_geometry = []
+all_equipment_geometry = []
+
+door_0 = Door()
+door_0.rotate(math.pi / 2)
+
+equipment_geometry.append(door_0.door_geometry)
+clearance_geometry.append(door_0.clearance_geometry)
+all_equipment_geometry.append(door_0.geometry)
+
+output = electrical_room.wall_geometry
 
 # equipment_geometry the geometry to Grasshopper
 equipment_geometry = th.list_to_tree(equipment_geometry)
