@@ -288,7 +288,7 @@ class ElectricalEquipment:
 # Define the Panelboard subclass
 class Panelboard(ElectricalEquipment):
     
-    def __init__(self, width=2, height=4, depth=0.5, name="",
+    def __init__(self, width=2, height=6, depth=0.5, name="",
                  position: Point = Point(0, 0), geometry_copy_equipment=None):
         super().__init__(width, height, depth, name, position, geometry_copy_equipment=geometry_copy_equipment)
         # Additional attributes specific to panelboard
