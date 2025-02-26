@@ -391,16 +391,16 @@ class ElectricalRoom:
         for i in range(int(interior_rectangle.Width / spacing) + 1):
             points.append(Point(interior_rectangle.Corner(0).X + i * spacing, interior_rectangle.Corner(0).Y))
             vectors.append(Vector(0, 1))
+        # Create points along the top edge
+        for i in range(int(interior_rectangle.Width / spacing), -1, -1):
+            points.append(Point(interior_rectangle.Corner(2).X - i * spacing, interior_rectangle.Corner(2).Y))
+            vectors.append(Vector(0, -1))
         # Create points along the right edge
         for i in range(int(interior_rectangle.Height / spacing) + 1):
             points.append(Point(interior_rectangle.Corner(1).X, interior_rectangle.Corner(1).Y + i * spacing))
             vectors.append(Vector(-1, 0))
-        # Create points along the top edge
-        for i in range(int(interior_rectangle.Width / spacing) + 1):
-            points.append(Point(interior_rectangle.Corner(2).X - i * spacing, interior_rectangle.Corner(2).Y))
-            vectors.append(Vector(0, -1))
         # Create points along the left edge
-        for i in range(int(interior_rectangle.Height / spacing) + 1):
+        for i in range(int(interior_rectangle.Height / spacing) + 1, -1, -1):
             points.append(Point(interior_rectangle.Corner(3).X, interior_rectangle.Corner(3).Y - i * spacing))
             vectors.append(Vector(1, 0))
 
@@ -509,9 +509,9 @@ messages = []
 # Dimensions of the room
 room_width = float(room_width)
 room_length = float(room_length)
-room_height = float(room_height)
+room_height = 10
 door_count = 1
-
+shuffle = True
 electrical_room = ElectricalRoom(room_width, room_length,
                                     room_height, door_count)
 
