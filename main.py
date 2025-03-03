@@ -549,8 +549,20 @@ for equipment in electrical_room.placed_equipment:
 output.append(electrical_room.wall_geometry)
 room_geometry.append(electrical_room.wall_geometry)
 
-equipment_geometry = th.list_to_tree(equipment_geometry)
-clearance_geometry = th.list_to_tree(clearance_geometry)
-all_equipment_geometry = th.list_to_tree(all_equipment_geometry)
+try:
+    equipment_geometry = th.list_to_tree(equipment_geometry)
+except:
+    pass
+try:
+    clearance_geometry = th.list_to_tree(clearance_geometry)
+except:
+    pass
+try:
+    all_equipment_geometry = th.list_to_tree(all_equipment_geometry)
+except:
+    pass
 print(f'output: {output}')
-output = th.list_to_tree(output)
+try:
+    output = th.list_to_tree(output)
+except:
+    pass
