@@ -52,7 +52,7 @@ def inches_to_feet(inches):
 
 # Define the Door class
 class Door:
-    def __init__(self, width=3, height=10, position: Point = Point(0, 0), orientation: Vector = Vector(0, 1)):
+    def __init__(self, width=3, height=inches_to_feet(80), position: Point = Point(0, 0), orientation: Vector = Vector(0, 1)):
         self.width = width
         self.height = height
         self.position = position
@@ -62,6 +62,7 @@ class Door:
         self.door_geometry = self.create_rhino_geometry(door=True, clearance=False)
         self.clearance_geometry = self.create_rhino_geometry(door=False, clearance=True)
         self.geometry = [self.door_geometry, self.clearance_geometry]
+        self.void = self.create_rhino_void_geometry()
 
     def create_rhino_geometry(self, door=True, clearance=True) -> Rhino.Geometry.Brep:
         # Initialize a list to store the geometry
@@ -78,9 +79,9 @@ class Door:
 
             door_brep = Rhino.Geometry.Brep.CreateFromBox(Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the door
             
-            # Rotate the door 45 degrees around the Z-axis by the angle of orientation at the hinge
+            # Rotate the door 85 degrees around the Z-axis by the angle of orientation at the hinge
             rotation_axis = Rhino.Geometry.Vector3d(0, 0, 1) # Z-axis
-            rotation_angle = math.pi / 4 # 45 degrees in radians
+            rotation_angle = math.radians(135) # Rotate the door 85 degrees
 
             hinge_point = Rhino.Geometry.Point3d(self.position.x + self.width / 2, self.position.y - self.thickness, 0) # Hinge point is the right side of the door
             door_brep.Rotate(rotation_angle, rotation_axis, hinge_point) # Rotate the door around the hinge point
@@ -104,11 +105,42 @@ class Door:
         rotation_angle = self.orientation.get_angle(Vector(0, 1))
         # print(f'Rotation angle: {rotation_angle}')
 
+        if self.orientation.x == 1 and self.orientation.y == 0:
+            # print('Orientation is 1, 0')
+            rotation_angle = math.radians(-90)
+
         if rotation_angle != 0:
             for brep in equipment_geometry:
                 brep.Rotate(rotation_angle, rotation_axis, self.position.to_gh_point())
 
         return equipment_geometry
+    
+    def create_rhino_void_geometry(self) -> Rhino.Geometry.Brep:
+        # Create a box geometry for the door
+        wall_thickness = 0.5 # Thickness of the wall
+        min_x = self.position.x - self.width / 2
+        max_x = self.position.x + self.width / 2
+        min_y = self.position.y - wall_thickness
+        max_y = self.position.y 
+        min_z = 0
+        max_z = self.height
+        door_brep = Rhino.Geometry.Brep.CreateFromBox(Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the door
+
+        # Rotate the geometry around the Z-axis by the angle of orientation
+        rotation_axis = Rhino.Geometry.Vector3d(0, 0, 1) # Z-axis
+        rotation_angle = self.orientation.get_angle(Vector(0, 1))
+
+        if self.orientation.x == 1 and self.orientation.y == 0:
+            # print('Orientation is 1, 0')
+            rotation_angle = math.radians(-90)
+
+        print(f'self.orientation: {self.orientation.x}, {self.orientation.y}')
+        # print(f'Rotation angle: {rotation_angle}')
+
+        if rotation_angle != 0:
+            door_brep.Rotate(rotation_angle, rotation_axis, self.position.to_gh_point())
+
+        return door_brep
     
     def rotate(self, angle): # Rotate the door by a given angle in radians
         self.orientation = self.orientation.rotate(angle)
@@ -116,15 +148,33 @@ class Door:
         self.door_geometry = self.create_rhino_geometry(door=True, clearance=False)
         self.clearance_geometry = self.create_rhino_geometry(door=False, clearance=True)
         self.geometry = [self.door_geometry, self.clearance_geometry]
+        self.void = self.create_rhino_void_geometry()
+
+    def orient(self, vector: Vector): # Orient the door to a given vector
+        self.orientation = vector
+        # Update the geometry after rotation
+        self.door_geometry = self.create_rhino_geometry(door=True, clearance=False)
+        self.clearance_geometry = self.create_rhino_geometry(door=False, clearance=True)
+        self.geometry = [self.door_geometry, self.clearance_geometry]
+        self.void = self.create_rhino_void_geometry()
+
+    def set_position(self, position: Point): # Set the position of the door
+        self.position = position
+        # Update the geometry after rotation
+        self.door_geometry = self.create_rhino_geometry(door=True, clearance=False)
+        self.clearance_geometry = self.create_rhino_geometry(door=False, clearance=True)
+        self.void = self.create_rhino_void_geometry()
 
 # Define the ElectricalEquipment base class
 class ElectricalEquipment:
-    def __init__(self, width, height, depth, name="", position: Point = Point(0, 0), front_clearance=3, side_clearance=0, rear_clearance=0, orientation: Vector = Vector(0, 1), geometry_copy_equipment=None):
+    def __init__(self, width, height, depth, name="", position: Point = Point(0, 0), front_clearance=3, side_clearance=0, rear_clearance=0, orientation: Vector = Vector(0, 1), geometry_copy_equipment=None, offset_from_floor=0, clearance_above: bool = False):
         self.width = width
         self.height = height
         self.depth = depth
         self.name = name
         self.position = position
+        self.offset_from_floor = offset_from_floor # Offset from the floor in feet
+        self.clearance_above = clearance_above # Clearance above the equipment in feet
         # Add attributes for clearances
         self.front_clearance = front_clearance
         self.side_clearance = side_clearance
@@ -185,15 +235,15 @@ class ElectricalEquipment:
                 return None
 
         else:
-            # Create a box geometry for the equipment
-            # Width should be centered at the position
-            min_x = self.position.x - self.width / 2 # min_x is the left side of the equipment
-            max_x = self.position.x + self.width / 2 # max_x is the right side of the equipment
-            min_y = self.position.y + self.rear_clearance # min_y is the rear side of the equipment (rear clearance is added)
-            max_y = self.position.y + self.depth + self.rear_clearance # max_y is the front side of the equipment (depth + rear clearance)
-            min_z = 0 # min_z is the bottom of the equipment
-            max_z = self.height # max_z is the top of the equipment
             if equipment: # If equipment is True, create the equipment geometry
+                # Create a box geometry for the equipment
+                # Width should be centered at the position
+                min_x = self.position.x - self.width / 2 # min_x is the left side of the equipment
+                max_x = self.position.x + self.width / 2 # max_x is the right side of the equipment
+                min_y = self.position.y + self.rear_clearance # min_y is the rear side of the equipment (rear clearance is added)
+                max_y = self.position.y + self.depth + self.rear_clearance # max_y is the front side of the equipment (depth + rear clearance)
+                min_z = self.offset_from_floor # min_z is the bottom of the equipment
+                max_z = self.height # max_z is the top of the equipment
                 equipment_brep = Rhino.Geometry.Brep.CreateFromBox(
                     Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the equipment
             
@@ -203,12 +253,19 @@ class ElectricalEquipment:
                 if self.front_clearance > 0: 
                     # Create a box geometry for the front clearance
                     # front_clearance should be along the positive y-axis and offset from the equipment
-                    min_x = self.position.x - self.width / 2 # min_x is the left side of the equipment
-                    max_x = self.position.x + self.width / 2 # max_x is the right side of the equipment
+
+                    # front_clearance_width should be 30 inches or the width of the equipment
+                    front_clearance_width = max(inches_to_feet(30), self.width) # front clearance width should be the maximum of front clearance and width of the equipment
+
+                    # front_clearance_height should be the height of the equipment or 6.5 feet
+                    front_clearance_height = max(6.5, self.height) # front clearance height should be the maximum of front clearance and height of the equipment
+
+                    min_x = self.position.x - front_clearance_width / 2 # min_x is the left side of the equipment
+                    max_x = self.position.x + front_clearance_width / 2 # max_x is the right side of the equipment
                     min_y = self.position.y + self.depth + self.rear_clearance # min_y is the front side of the equipment
                     max_y = self.position.y + self.depth + self.front_clearance + self.rear_clearance # max_y is the front side of the equipment + front clearance
                     min_z = 0 # min_z is the bottom of the equipment
-                    max_z = self.height # max_z is the top of the equipment
+                    max_z = front_clearance_height # max_z is the top of the equipment
                     front_clearance_brep = Rhino.Geometry.Brep.CreateFromBox(
                         Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the front clearance
                     clearance_brep_list.append(front_clearance_brep)
@@ -254,6 +311,19 @@ class ElectricalEquipment:
                 
                     clearance_brep_list.append(rear_clearance_brep)
 
+                if self.clearance_above: # If clearance above is True
+                    # Create a box geometry for the clearance above
+                    # clearance_above should be along the positive z-axis and offset from the equipment above
+                    min_x = self.position.x - self.width / 2 # min_x is the left side of the equipment
+                    max_x = self.position.x + self.width / 2 # max_x is the right side of the equipment
+                    min_y = self.position.y + self.rear_clearance # min_y is the rear side of the equipment (rear clearance is added)
+                    max_y = self.position.y + self.depth + self.rear_clearance # max_y is the front side of the equipment (depth + rear clearance)
+                    min_z = self.height # min_z is the top of the equipment
+                    max_z = 10 # max_z is the top of the room
+                    clearance_above_brep = Rhino.Geometry.Brep.CreateFromBox(
+                        Rhino.Geometry.BoundingBox(min_x, min_y, min_z, max_x, max_y, max_z)) # Create a box geometry for the clearance above
+                    clearance_brep_list.append(clearance_above_brep)
+
             equipment_geometry = []
             if equipment:
                 equipment_geometry.append(equipment_brep)
@@ -266,6 +336,9 @@ class ElectricalEquipment:
             # Angle in radians
             rotation_angle = self.orientation.get_angle(Vector(0, 1)) 
             
+            if self.orientation.x == 1 and self.orientation.y == 0:
+                # print('Orientation is 1, 0')
+                rotation_angle = math.radians(-90)
             # print(f'Rotation angle: {rotation_angle}')
 
             if rotation_angle != 0:
@@ -288,15 +361,18 @@ class ElectricalEquipment:
 # Define the Panelboard subclass
 class Panelboard(ElectricalEquipment):
     
-    def __init__(self, width=2, height=6, depth=0.5, name="",
-                 position: Point = Point(0, 0), geometry_copy_equipment=None):
-        super().__init__(width, height, depth, name, position, geometry_copy_equipment=geometry_copy_equipment)
+    def __init__(self, width=inches_to_feet(20), height=6, depth=inches_to_feet(5.75), name="",
+                 position: Point = Point(0, 0), geometry_copy_equipment=None, offset_from_floor=inches_to_feet(30)):
+        super().__init__(width, height, depth, name, position, 
+                         geometry_copy_equipment=geometry_copy_equipment, 
+                         offset_from_floor=offset_from_floor, clearance_above=True)
         # Additional attributes specific to panelboard
         # ...
 
 # Define the Transformer subclass
 class Transformer(ElectricalEquipment):
-    def __init__(self, width=3, height=3, depth=3, name="",
+    def __init__(self, width=inches_to_feet(25.5), height=inches_to_feet(29.3), 
+                 depth=inches_to_feet(25.9), name="",
                  position: Point = Point(0, 0), geometry_copy_equipment=None):
         self.rear_clearance = 0.25
         self.front_clearance = 3
@@ -310,28 +386,78 @@ class Transformer(ElectricalEquipment):
 class ElectricalRoom:
     # Initialize the electrical room with necessary attributes (e.g., dimensions, list of equipment)
     # ...
-    def __init__(self, width, length, height=10, door_count=1):
+    def __init__(self, width, length, height=10):
         self.width = width
         self.length = length
         self.height = height
-        self.door_count = door_count
         self.equipment_list = []
         self.placed_equipment = []
 
-        self.doors = [Door() for _ in range(door_count)]
+        self.doors = []
 
         self.interior_rectangle = self.create_interior_rectangle()
-        self.wall_geometry = self.create_wall_geometry()
+        self.outline_geometry, self.difference_geometry = self.create_wall_geometry()
 
-        self.south_wall_face = self.wall_geometry.Faces[9]
-        self.north_wall_face = self.wall_geometry.Faces[7]
-        self.east_wall_face = self.wall_geometry.Faces[8]
-        self.west_wall_face = self.wall_geometry.Faces[6]
+        self.south_wall_face = self.outline_geometry.Faces[9]
+        self.north_wall_face = self.outline_geometry.Faces[7]
+        self.east_wall_face = self.outline_geometry.Faces[8]
+        self.west_wall_face = self.outline_geometry.Faces[6]
     
     # Method to add equipment to the room
     def add_equipment(self, equipment: ElectricalEquipment, count=1) -> bool:
         for i in range(count):
             self.equipment_list.append(equipment)
+        return True
+    
+    def add_door_from_point(self, point: Point) -> bool:
+        # Logic to add a door to the room
+        # Return True if successful, False otherwise
+        door = Door()
+        self.doors.append(door)
+
+        points, vectors = self.generate_points_and_vectors(flatten=False)
+
+        door_width = door.width
+        point_spacing = 0.5 # Spacing between points
+
+        # Remove points that cannot fit the door, points that are too close to the corner
+        number_of_points_to_remove_from_each_corner = door_width / 2 / point_spacing
+
+        for edge_points, edge_vectors in zip(points, vectors):
+            for i in range(int(number_of_points_to_remove_from_each_corner)):
+                edge_points.pop(0)
+                edge_points.pop(-1)
+                edge_vectors.pop(0)
+                edge_vectors.pop(-1)
+
+        # Flatten the points and vectors
+        points = [point for sublist in points for point in sublist]
+        vectors = [vector for sublist in vectors for vector in sublist]
+
+        # Get nearest point and vector to the door point
+        nearest_point = None
+        nearest_vector = None
+        min_distance = float('inf')
+        for p, v in zip(points, vectors):
+            distance = p.distance(point)
+            if distance < min_distance:
+                min_distance = distance
+                nearest_point = p
+                nearest_vector = v
+
+        print(f'Nearest point: {nearest_point.x}, {nearest_point.y}')
+        
+        # Set the position and orientation of the door
+        door.set_position(nearest_point)
+        door.orient(nearest_vector)
+
+        # Update the wall geometry
+        self.outline_geometry, self.difference_geometry = self.create_wall_geometry()
+        self.south_wall_face = self.outline_geometry.Faces[9]
+        self.north_wall_face = self.outline_geometry.Faces[7]
+        self.east_wall_face = self.outline_geometry.Faces[8]
+        self.west_wall_face = self.outline_geometry.Faces[6]
+
         return True
     
     def create_interior_rectangle(self) -> Rhino.Geometry.Rectangle3d:
@@ -357,7 +483,7 @@ class ElectricalRoom:
                                            Rhino.Geometry.Point3d(max_x, max_y, 0))
 
     # Method to create the wall geometry of the room
-    def create_wall_geometry(self) -> Rhino.Geometry.Brep:
+    def create_wall_geometry(self) -> tuple:
         wall_thickness = 0.5 # Thickness of the wall
 
         # Offset the interior rectangle to create the exterior rectangle
@@ -369,18 +495,24 @@ class ElectricalRoom:
         surface = Rhino.Geometry.Brep.CreatePlanarBreps(edges, 0.001)[0]
 
         # Extrude the surface to create the walls
-        wall_brep = Rhino.Geometry.Brep.CreateFromOffsetFace(surface.Faces[0], self.height, 0.001, False, True)
-        
-        return wall_brep
+        outline_brep = Rhino.Geometry.Brep.CreateFromOffsetFace(surface.Faces[0], self.height, 0.001, False, True)
+
+        difference_brep = outline_brep
+        # Cut the door from the wall
+        for door in self.doors:
+            void_brep = door.void
+            difference_brep = list(Rhino.Geometry.Brep.CreateBooleanDifference(difference_brep, void_brep, 0.001))[0]
+            
+        return outline_brep, difference_brep
     
     # Method to generate points and vectors around the room
-    def generate_points_and_vectors(self):
+    def generate_points_and_vectors(self, flatten=True, spacing=0.5) -> tuple:
         # Create Points and Vectors around the room
         points = []
         vectors = []
 
         # Create points around the interior rectangle
-        spacing = 0.5 # Spacing between points
+        # spacing = 0.5 # Spacing between points
         interior_rectangle = self.interior_rectangle
 
         # Create points along the edges of the rectangle
@@ -388,21 +520,47 @@ class ElectricalRoom:
         # Starting from the bottom left corner
 
         # Create points along the bottom edge
+        bottom_points = []
+        bottom_vectors = []
         for i in range(int(interior_rectangle.Width / spacing) + 1):
-            points.append(Point(interior_rectangle.Corner(0).X + i * spacing, interior_rectangle.Corner(0).Y))
-            vectors.append(Vector(0, 1))
+            bottom_points.append(Point(interior_rectangle.Corner(0).X + i * spacing, interior_rectangle.Corner(0).Y))
+            bottom_vectors.append(Vector(0, 1))
         # Create points along the top edge
-        for i in range(int(interior_rectangle.Width / spacing), -1, -1):
-            points.append(Point(interior_rectangle.Corner(2).X - i * spacing, interior_rectangle.Corner(2).Y))
-            vectors.append(Vector(0, -1))
+        top_points = []
+        top_vectors = []
+        for i in range(int(interior_rectangle.Width / spacing)):
+            top_points.append(Point(interior_rectangle.Corner(2).X - i * spacing, interior_rectangle.Corner(2).Y))
+            top_vectors.append(Vector(0, -1))
+        # Reverse the top points and vectors
+        top_points.reverse()
+        top_vectors.reverse()
         # Create points along the right edge
-        for i in range(int(interior_rectangle.Height / spacing) + 1):
-            points.append(Point(interior_rectangle.Corner(1).X, interior_rectangle.Corner(1).Y + i * spacing))
-            vectors.append(Vector(-1, 0))
+        right_points = []
+        right_vectors = []
+        for i in range(int(interior_rectangle.Height / spacing)):
+            right_points.append(Point(interior_rectangle.Corner(1).X, interior_rectangle.Corner(1).Y + i * spacing))
+            right_vectors.append(Vector(-1, 0))
         # Create points along the left edge
-        for i in range(int(interior_rectangle.Height / spacing) + 1, -1, -1):
-            points.append(Point(interior_rectangle.Corner(3).X, interior_rectangle.Corner(3).Y - i * spacing))
-            vectors.append(Vector(1, 0))
+        left_points = []
+        left_vectors = []
+        for i in range(int(interior_rectangle.Height / spacing) + 1):
+            left_points.append(Point(interior_rectangle.Corner(3).X, interior_rectangle.Corner(3).Y - i * spacing))
+            left_vectors.append(Vector(1, 0))
+        # Reverse the left points and vectors
+        left_points.reverse()
+        left_vectors.reverse()
+
+        print(f'len(bottom_points): {len(bottom_points)}')
+        print(f'len(top_points): {len(top_points)}')
+        print(f'len(right_points): {len(right_points)}')
+        print(f'len(left_points): {len(left_points)}')
+
+        if flatten:
+            points = bottom_points + top_points + right_points + left_points
+            vectors = bottom_vectors + top_vectors + right_vectors + left_vectors
+        else:
+            points = [bottom_points, top_points, right_points, left_points]
+            vectors = [bottom_vectors, top_vectors, right_vectors, left_vectors]
 
         return points, vectors
     
@@ -425,7 +583,7 @@ class ElectricalRoom:
         wall_intersection = False
 
         for e_geometry in equipment.geometry:
-            intersection_result = Rhino.Geometry.Brep.CreateBooleanIntersection(self.wall_geometry, e_geometry, 0.001, False)
+            intersection_result = Rhino.Geometry.Brep.CreateBooleanIntersection(self.difference_geometry, e_geometry, 0.001, False)
             if intersection_result:
                 wall_intersection = True
                 break
@@ -451,7 +609,7 @@ class ElectricalRoom:
 
         # Check if equipment geometry intersects with other clearance geometry
         # If they do, return False
-        for placed_equipment in self.placed_equipment:
+        for placed_equipment in self.placed_equipment + self.doors:
             for placed_geometry in placed_equipment.clearance_geometry:
                 for e_geometry in equipment.equipment_geometry:
                     intersection_result = Rhino.Geometry.Brep.CreateBooleanIntersection(placed_geometry, e_geometry, 0.001, False)
@@ -494,6 +652,62 @@ class ElectricalRoom:
         else:
             print('Not all equipment placed successfully')
             return False
+        
+    def calculate_blocked_walls_distance(self) -> tuple:
+        # Calculate the total distance of the walls
+        total_wall_distance = self.width * 2 + self.length * 2
+        for door in self.doors:
+            total_wall_distance -= door.width
+
+        # A wall is considered blocked if there is equipment within 3 feet of it
+        # Create a points and vectors around the room
+        points, vectors = self.generate_points_and_vectors(spacing=0.25)
+
+        # Remove points and vectors that overlap with the door void
+        for door in self.doors:
+            door_void = door.void
+            
+            for point, vector in zip(points, vectors):
+                # Offset the point by the vector * -0.25 to get the point inside the wall
+                test_point = point.to_gh_point() + vector.to_gh_vector() * -0.25
+                # Offset the point along the z-axis by 0.5 feet to get the point inside the wall
+                test_point = Rhino.Geometry.Point3d(test_point.X, test_point.Y, test_point.Z + 0.5)
+                intersection_result = door_void.IsPointInside(test_point, 0.001, True)
+                # print(f'intersection_result: {intersection_result}')
+                if intersection_result:
+                    # print(f'Point {point.x}, {point.y} is inside door void')
+                    points.remove(point)
+                    vectors.remove(vector)
+        
+        # Create a list of points that are within 3 feet of the wall
+        blocked_points = []
+        offset = 2
+        small_offset = 0.1
+        total_offset = offset - small_offset
+        for point, vector in zip(points, vectors):
+            rhino_point = point.to_gh_point()
+            # Offset the point along the vector by 0.1 feet
+            rhino_point += vector.to_gh_vector() * small_offset
+            rhino_vector = vector.to_gh_vector()
+            # Create a line from the point away from the wall
+            line = Rhino.Geometry.Line(rhino_point, rhino_point + rhino_vector * total_offset)
+            
+            # Check if the line intersects with equipment geometry or clearance geometry
+            for equipment in self.placed_equipment:
+                for geometry in equipment.geometry:
+                    intersection_result = Rhino.Geometry.Intersect.Intersection.CurveBrep(line.ToNurbsCurve(), geometry, 0.001)
+                    # print(f'intersection_result: {intersection_result[1]}')
+                    # output.append(list(intersection_result[1]))
+                    if len(list(intersection_result[1])) > 0:
+                        output.append(line.ToNurbsCurve())
+                        print(f'Point {point.x}, {point.y} is blocked by equipment {equipment.name}')
+                        blocked_points.append(point)
+                        break
+
+        # Calculate the percentage of blocked points compared to the total number of points
+        total_blocked_wall_distance = len(blocked_points) / len(points) * total_wall_distance
+
+        return total_wall_distance, total_blocked_wall_distance
 
 # OUTPUTS
 equipment_geometry = []
@@ -510,16 +724,17 @@ messages = []
 room_width = float(room_width)
 room_length = float(room_length)
 room_height = 10
-door_count = 1
+# door_count = 1
 shuffle = True
 electrical_room = ElectricalRoom(room_width, room_length,
-                                    room_height, door_count)
+                                    room_height)
 
 # Create instances of Panelboard and Transformer
 # INPUTS
 panelboard_count = int(panelboard_count)
 transformer_count = int(transformer_count)
 shuffle = bool(shuffle)
+door_point = Point(door_point.X, door_point.Y)
 
 # Add the panelboard and transformer to the electrical room
 
@@ -533,12 +748,16 @@ for i in range(transformer_count):
     t = Transformer(name=f'T{i+1}', geometry_copy_equipment=example_transformer)
     electrical_room.add_equipment(t, 1)
 
+electrical_room.add_door_from_point(door_point)
+
 # Layout the equipment in the room
 layout_success = electrical_room.layout_equipment(shuffle=shuffle)
 if layout_success:
     messages.append('Layout successful')
+    messages.append(True)
 else:
     messages.append('Layout failed')
+    messages.append(False)
 
 # Extract the geometry of the equipment and clearance
 for equipment in electrical_room.placed_equipment:
@@ -546,8 +765,47 @@ for equipment in electrical_room.placed_equipment:
     clearance_geometry.append(equipment.clearance_geometry)
     all_equipment_geometry.append(equipment.geometry)
 
-output.append(electrical_room.wall_geometry)
-room_geometry.append(electrical_room.wall_geometry)
+room_geometry.append([electrical_room.difference_geometry])
+
+for door in electrical_room.doors:
+    room_geometry.append(door.door_geometry)
+    
+total_wall_distance, total_blocked_wall_distance = electrical_room.calculate_blocked_walls_distance()
+
+print(f'Total wall distance: {total_wall_distance}')
+print(f'Total blocked wall distance: {total_blocked_wall_distance}')
+messages.append(total_wall_distance)
+messages.append(total_blocked_wall_distance)
+
+# Report equipment not placed
+not_placed_counts = {}
+if len(electrical_room.equipment_list) > 0:
+    for equipment in electrical_room.equipment_list:
+        equipment_found = False
+        for placed_equipment in electrical_room.placed_equipment:
+            if equipment.name == placed_equipment.name:
+                print(f'Equipment {equipment.name} is in the placed equipment list')
+                equipment_found = True
+                break # If the equipment is in the placed equipment list, break
+        if not equipment_found:
+            print(f'Equipment {equipment.name} is not in the placed equipment list')
+            # If the equipment is not in the placed equipment list, add it to the not placed counts
+            class_name = equipment.__class__.__name__
+            if class_name in not_placed_counts:
+                not_placed_counts[class_name] += 1
+            else:
+                not_placed_counts[class_name] = 1
+
+not_placed_messages = []
+for key, value in not_placed_counts.items():
+    if value > 1:
+        not_placed_messages.append(f'{value} {key}s not placed')
+    else:
+        not_placed_messages.append(f'{value} {key} not placed')
+if len(not_placed_messages) > 0:
+    messages.append('\n'.join(not_placed_messages))
+else:
+    messages.append('All equipment placed successfully')
 
 try:
     equipment_geometry = th.list_to_tree(equipment_geometry)
@@ -558,11 +816,12 @@ try:
 except:
     pass
 try:
-    all_equipment_geometry = th.list_to_tree(all_equipment_geometry)
+    room_geometry = th.list_to_tree(room_geometry)
 except:
     pass
 print(f'output: {output}')
 try:
+    print(f'output to tree')
     output = th.list_to_tree(output)
 except:
     pass
